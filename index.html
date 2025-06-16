@@ -1,79 +1,88 @@
-
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>ZIP Re-encoder to UTF-8 (Safe)</title>
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.0/dist/jszip.min.js"></script>
+  <title>Транслитерация ZIP-архива</title>
   <style>
-    body { font-family: sans-serif; padding: 20px; }
-    #status { margin-top: 10px; color: #007700; }
-    #error { margin-top: 10px; color: red; }
-    #log { margin-top: 10px; font-size: 0.9em; color: #444; white-space: pre-wrap; }
+    body { font-family: sans-serif; margin: 2em; background: #f9f9f9; }
+    h1 { color: #333; }
+    input, button { margin-top: 1em; display: block; }
+    #log { margin-top: 2em; white-space: pre-wrap; background: #eee; padding: 1em; border-radius: 8px; height: 300px; overflow-y: auto; }
   </style>
 </head>
 <body>
-  <h1>ZIP Re-encoder to UTF-8 (Safe)</h1>
-  <p>Загрузите zip-файл, созданный на iPhone или Mac, и нажмите кнопку. Даже при ошибках имён вы получите новый архив.</p>
-  <input type="file" id="zipFile" accept=".zip" />
-  <br><br>
-  <button onclick="processZip()">🔄 Re-encode</button>
-  <div id="status"></div>
-  <div id="error"></div>
-  <div id="log"></div>
+  <h1>ZIP Транслитератор: 🇷🇺 ⇄ 🇬🇧</h1>
+  <p>Загрузите ZIP-архив с кириллическими или латинскими именами. Выберите направление преобразования.</p>
 
+  <input type="file" id="zipInput" accept=".zip" />
+  <select id="mode">
+    <option value="forward">🇷🇺 → 🇬🇧 Транслитерация</option>
+    <option value="reverse">🇬🇧 → 🇷🇺 Обратная транслитерация</option>
+  </select>
+  <button onclick="processZip()">🚀 Запустить обработку</button>
+
+  <div id="log">📝 Журнал действий появится здесь...</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script>
-    async function processZip() {
-      const fileInput = document.getElementById('zipFile');
-      const status = document.getElementById('status');
-      const error = document.getElementById('error');
-      const log = document.getElementById('log');
-      status.textContent = "";
-      error.textContent = "";
-      log.textContent = "";
+    const translitTable = {
+      "А":"A","Б":"B","В":"V","Г":"G","Д":"D","Е":"E","Ё":"E","Ж":"Zh","З":"Z","И":"I","Й":"Y",
+      "К":"K","Л":"L","М":"M","Н":"N","О":"O","П":"P","Р":"R","С":"S","Т":"T","У":"U","Ф":"F",
+      "Х":"Kh","Ц":"Ts","Ч":"Ch","Ш":"Sh","Щ":"Sch","Ъ":"","Ы":"Y","Ь":"","Э":"E","Ю":"Yu","Я":"Ya",
+      "а":"a","б":"b","в":"v","г":"g","д":"d","е":"e","ё":"e","ж":"zh","з":"z","и":"i","й":"y",
+      "к":"k","л":"l","м":"m","н":"n","о":"o","п":"p","р":"r","с":"s","т":"t","у":"u","ф":"f",
+      "х":"kh","ц":"ts","ч":"ch","ш":"sh","щ":"sch","ъ":"","ы":"y","ь":"","э":"e","ю":"yu","я":"ya"
+    };
+    const reverseTable = Object.fromEntries(Object.entries(translitTable).map(([k, v]) => [v, k]));
 
-      if (!fileInput.files.length) {
-        error.textContent = "❗ Пожалуйста, выберите zip-файл.";
-        return;
+    const log = (text) => {
+      document.getElementById("log").textContent += `\n${text}`;
+    };
+
+    function transliterate(text, mode) {
+      if (mode === "forward") {
+        return text.split('').map(ch => translitTable[ch] || ch).join('');
+      } else {
+        return text.replace(/Zh|Sch|Kh|Ts|Ch|Sh|Yu|Ya|zh|sch|kh|ts|ch|sh|yu|ya|[A-Za-z]/g, match =>
+          Object.entries(translitTable).find(([, v]) => v === match)?.[0] || match
+        );
       }
+    }
+
+    async function processZip() {
+      const file = document.getElementById("zipInput").files[0];
+      const mode = document.getElementById("mode").value;
+      const zip = new JSZip();
+      const output = new JSZip();
+      document.getElementById("log").textContent = "🔄 Начинаем обработку...";
 
       try {
-        const file = fileInput.files[0];
-        const zip = await JSZip.loadAsync(file);
-        const newZip = new JSZip();
-        let skipped = 0;
+        const zipData = await zip.loadAsync(file);
+        log("✅ ZIP-файл загружен. Файлов внутри: " + Object.keys(zipData.files).length);
 
-        for (const [path, entry] of Object.entries(zip.files)) {
-          let utf8Name;
-          try {
-            utf8Name = decodeURIComponent(escape(path));
-          } catch (e) {
-            utf8Name = path; // используем оригинальное имя
-            log.textContent += "⚠️ Не удалось декодировать имя: " + path + "\n";
-            skipped++;
-          }
+        for (let filePath in zipData.files) {
+          const fileObj = zipData.files[filePath];
+          const newPath = filePath.split("/").map(part => transliterate(part, mode)).join("/");
 
-          if (entry.dir) {
-            newZip.folder(utf8Name);
+          if (!fileObj.dir) {
+            const content = await fileObj.async("uint8array");
+            output.file(newPath, content);
+            log(`📄 ${filePath} → ${newPath}`);
           } else {
-            const content = await entry.async("uint8array");
-            newZip.file(utf8Name, content);
+            output.folder(newPath);
+            log(`📁 ${filePath} → ${newPath}`);
           }
         }
 
-        const blob = await newZip.generateAsync({ type: "blob" });
-        const downloadLink = document.createElement("a");
-        downloadLink.href = URL.createObjectURL(blob);
-        downloadLink.download = "utf8_encoded.zip";
-        downloadLink.textContent = "⬇️ Скачать перекодированный архив";
-        downloadLink.style.display = "block";
-        downloadLink.style.marginTop = "10px";
-
-        status.textContent = "✅ Архив создан. Проблемных имён: " + skipped;
-        status.appendChild(downloadLink);
-      } catch (e) {
-        error.textContent = "❌ Ошибка обработки архива: " + e.message;
-        console.error(e);
+        const result = await output.generateAsync({ type: "blob" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(result);
+        link.download = "transliterated.zip";
+        link.textContent = "⬇️ Скачать ZIP с результатом";
+        document.body.appendChild(link);
+        log("✅ Архив создан и готов к скачиванию.");
+      } catch (err) {
+        log("❌ Ошибка: " + err.message);
       }
     }
   </script>
