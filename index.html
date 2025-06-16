@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ZIP Re-encoder to UTF-8</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.0/dist/jszip.min.js"></script>
+</head>
+<body>
+  <h1>ZIP Re-encoder to UTF-8</h1>
+  <p>Выберите zip-файл, созданный на iPhone или Mac, и нажмите кнопку. Вы получите новый архив, в котором все имена файлов будут перекодированы в UTF-8.</p>
+  <input type="file" id="zipFile" accept=".zip" />
+  <button onclick="processZip()">🔄 Re-encode</button>
+  <p id="status"></p>
+  <script>
+    async function processZip() {
+      const fileInput = document.getElementById('zipFile');
+      const status = document.getElementById('status');
+      if (!fileInput.files.length) return alert("Upload a .zip file first.");
+      const file = fileInput.files[0];
+
+      const jszip = new JSZip();
+      const zip = await jszip.loadAsync(file);
+      const newZip = new JSZip();
+
+      for (const [path, entry] of Object.entries(zip.files)) {
+        const utf8Name = decodeURIComponent(escape(path));
+        if (entry.dir) {
+          newZip.folder(utf8Name);
+        } else {
+          const content = await entry.async("uint8array");
+          newZip.file(utf8Name, content);
+        }
+      }
+
+      const blob = await newZip.generateAsync({type:"blob"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "utf8_encoded.zip";
+      a.click();
+      status.textContent = "✅ ZIP file re-encoded to UTF-8!";
+    }
+  </script>
+</body>
+</html>
