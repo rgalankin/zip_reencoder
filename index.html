@@ -3,30 +3,34 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>ZIP Re-encoder to UTF-8</title>
+  <title>ZIP Re-encoder to UTF-8 (Safe)</title>
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.0/dist/jszip.min.js"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; }
     #status { margin-top: 10px; color: #007700; }
     #error { margin-top: 10px; color: red; }
+    #log { margin-top: 10px; font-size: 0.9em; color: #444; white-space: pre-wrap; }
   </style>
 </head>
 <body>
-  <h1>ZIP Re-encoder to UTF-8</h1>
-  <p>Загрузите zip-файл, созданный на iPhone или Mac, и нажмите кнопку. Вы получите новый архив с именами файлов в кодировке UTF-8.</p>
+  <h1>ZIP Re-encoder to UTF-8 (Safe)</h1>
+  <p>Загрузите zip-файл, созданный на iPhone или Mac, и нажмите кнопку. Даже при ошибках имён вы получите новый архив.</p>
   <input type="file" id="zipFile" accept=".zip" />
   <br><br>
   <button onclick="processZip()">🔄 Re-encode</button>
   <div id="status"></div>
   <div id="error"></div>
+  <div id="log"></div>
 
   <script>
     async function processZip() {
       const fileInput = document.getElementById('zipFile');
       const status = document.getElementById('status');
       const error = document.getElementById('error');
+      const log = document.getElementById('log');
       status.textContent = "";
       error.textContent = "";
+      log.textContent = "";
 
       if (!fileInput.files.length) {
         error.textContent = "❗ Пожалуйста, выберите zip-файл.";
@@ -37,9 +41,18 @@
         const file = fileInput.files[0];
         const zip = await JSZip.loadAsync(file);
         const newZip = new JSZip();
+        let skipped = 0;
 
         for (const [path, entry] of Object.entries(zip.files)) {
-          const utf8Name = decodeURIComponent(escape(path)); // fallback перекодировка
+          let utf8Name;
+          try {
+            utf8Name = decodeURIComponent(escape(path));
+          } catch (e) {
+            utf8Name = path; // используем оригинальное имя
+            log.textContent += "⚠️ Не удалось декодировать имя: " + path + "\n";
+            skipped++;
+          }
+
           if (entry.dir) {
             newZip.folder(utf8Name);
           } else {
@@ -49,7 +62,6 @@
         }
 
         const blob = await newZip.generateAsync({ type: "blob" });
-
         const downloadLink = document.createElement("a");
         downloadLink.href = URL.createObjectURL(blob);
         downloadLink.download = "utf8_encoded.zip";
@@ -57,9 +69,8 @@
         downloadLink.style.display = "block";
         downloadLink.style.marginTop = "10px";
 
-        status.textContent = "✅ Архив успешно перекодирован.";
+        status.textContent = "✅ Архив создан. Проблемных имён: " + skipped;
         status.appendChild(downloadLink);
-
       } catch (e) {
         error.textContent = "❌ Ошибка обработки архива: " + e.message;
         console.error(e);
